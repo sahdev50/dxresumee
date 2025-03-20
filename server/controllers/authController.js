@@ -2,9 +2,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Otp = require('../models/Otp');
-const transporter = require('../config/mailer');
 const dotenv = require('dotenv');
-const { getOtpEmailTemplate, getResendOtpEmailTemplate } = require('../utils/emailTemplates');
+const { getOtpEmailTemplate, getResendOtpEmailTemplate, verificationSuccessEmail } = require('../utils/emailTemplates');
+const sendEmail = require('../utils/sendEmail');
 
 
 dotenv.config()
@@ -27,13 +27,11 @@ exports.registerUser = async (req, res) => {
     const code = generateOTP();
     await Otp.create({ email, code });
 
-    await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'Verify your email - OTP Code',
-        html: getOtpEmailTemplate(name, code),
-      });
-      
+    await sendEmail(
+      email,
+      'Verify your email - OTP Code',
+      getOtpEmailTemplate(name, code),
+    ) 
 
     res.status(201).json({ message: 'User registered. Check email for verification code.' });
   } catch (err) {
@@ -43,21 +41,59 @@ exports.registerUser = async (req, res) => {
 };
 
 // Verify OTP
-exports.verifyUser = async (req, res) => {
-  const { email, code } = req.body;
+exports.verifyOtp = async (req, res) => {
+  const { email, otp } = req.body;
+
   try {
-    const otpRecord = await Otp.findOne({ email, code });
-    if (!otpRecord) return res.status(400).json({ message: 'Invalid or expired OTP' });
+    const user = await User.findOne({ email });
 
-    await User.findOneAndUpdate({ email }, { verified: true });
-    await Otp.deleteMany({ email });
+    if (!user) return res.status(400).json({ message: 'User not found' });
 
-    res.json({ message: 'User verified successfully' });
+    const existingOtp = await Otp.findOne({ email });
+    console.log(existingOtp)
+    if (!existingOtp || existingOtp.code !== otp) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    // Mark user as verified
+    user.verified = true;
+    await user.save();
+
+    await Otp.deleteOne({ email });
+
+    // 🔥 Create token and send login cookie immediately
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: '7d',
+    });
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: false, // true only in production
+      sameSite: 'Lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    await sendEmail(
+      user.email,
+      'Email Verified - Welcome to DxResumee 🎉',
+      verificationSuccessEmail(user.name)
+    );
+
+    return res.status(200).json({
+      message: 'OTP verified, logged in successfully',
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+      },
+    }); 
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.log(err);
+    res.status(500).json({ message: 'Server error during OTP verification' });
   }
 };
+
 
 // Login
 exports.loginUser = async (req, res) => {
@@ -80,8 +116,9 @@ exports.loginUser = async (req, res) => {
     // ✅ Set token in HttpOnly cookie
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // true in production (HTTPS)
-      sameSite: 'Strict',
+      // secure: process.env.NODE_ENV === 'production', // true in production (HTTPS)
+      secure:false,
+      sameSite: 'Lax',
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
 
@@ -107,15 +144,12 @@ exports.resendOTP = async (req, res) => {
       // Generate new OTP
       const code = generateOTP();
       await Otp.create({ email, code });
-  
-      // Send OTP via email
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'Resend OTP - Your Verification Code',
-        html: getResendOtpEmailTemplate(user.name, code),
-      });
-      
+
+      await sendEmail(
+        user.email,
+        'Resend OTP - Your Verification Code',
+        getResendOtpEmailTemplate(user.name, code),
+      );
   
       res.json({ message: 'New verification code sent to email' });
     } catch (err) {
@@ -123,4 +157,28 @@ exports.resendOTP = async (req, res) => {
       res.status(500).json({ message: 'Server error' });
     }
   };
+
+  // authController.js
+exports.getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    res.status(200).json({ user });
+  } catch (err) {
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+};
+
+// Logout
+
+exports.logoutUser = (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'Strict',
+  });
+
+  res.status(200).json({ message: 'Logged out successfully' });
+};
+
+
   

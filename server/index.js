@@ -27,11 +27,19 @@ connectDB()
 
 const app = express();
 
+app.use(cors({
+  origin: 'http://localhost:5173', // Allow only your Vite frontend
+  credentials: true // if you're using cookies/session
+}));
+
 // for creating cookies
 app.use(cookieParser());
 
 // more secure
 app.use(helmet());
+
+// Middleware
+app.use(express.json());
 
 const PORT = 5050;
 
@@ -39,9 +47,6 @@ const PORT = 5050;
 app.use(session({ secret: 'mysecret', resave: false, saveUninitialized: true }));
 app.use(passport.initialize());
 app.use(passport.session());
-
-// Middleware
-app.use(express.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api', dashboardRoutes);
