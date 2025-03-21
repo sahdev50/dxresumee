@@ -10,6 +10,7 @@ const connectDB = require('./config/db');
 
 // routes
 const authRoutes = require('./routes/authRoutes');
+const resumeRoutes = require('./routes/resumeRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes')
 
 const helmet = require('helmet');
@@ -49,6 +50,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 app.use('/api/auth', authRoutes);
+app.use('/api/resume', resumeRoutes);
 app.use('/api', dashboardRoutes);
 
 // Simple route

@@ -7,6 +7,7 @@ import Signup from './pages/SignUp';
 import PrivateRoute from './components/PrivateRoute';
 import VerifyOtp from './pages/VerifyOtp';
 import GuestRoute from './components/GuestRoute';
+import ResumeCreatePage from './pages/ResumeCreatePage';
 
 const App = () => {
   return (
@@ -34,6 +35,7 @@ const App = () => {
               <Dashboard />
             </PrivateRoute>} 
           />
+          <Route path="/resume/create" element={<PrivateRoute><ResumeCreatePage /></PrivateRoute>} />
         </Routes>
       </div>
       <Footer />
